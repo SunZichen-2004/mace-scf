@@ -11,6 +11,13 @@ required for force training; zero-width energies and ordinary forces are support
 
 The Hamiltonian is evaluated once; the returned electrostatic potential is
 diagnostic and is not fed back into the electronic state.
+
+``fragment_diagonalize=True`` replaces the full eigensolve by divide-and-conquer
+diagonalisation of overlapping atom-centred fragments of radius ``fragment_radius``
+(Å); see ``fragment_state.py``. Saved models can switch with
+``model.use_fragment_diagonalization(radius)`` (``radius=None`` restores full).
+``batched_diagonalize=True`` keeps full diagonalisation but solves all graphs of a batch in
+one padded batched eigh (``batched_state.py``); switch with ``model.use_batched_diagonalization()``.
 """
 
 import numpy as np
@@ -22,7 +29,34 @@ from mace.modules import (
 )
 from .localsources import _LocalSourceModelBase
 from .matrix_ops import HamiltonianBuilder, ElectronicState
+from .fragment_state import FragmentElectronicState
+from .batched_state import BatchedElectronicState
 from .density_electrostatics import DensityElectrostatics
+
+
+def _polar_feature_index(irreps):
+    """Columns of the l=0 scalar and l=1 polar-vector channels, grouped by irrep."""
+    columns, order = {}, []
+    offset = 0
+    for mul, ir in o3.Irreps(irreps):
+        width = mul * ir.dim
+        if ir.l <= 1 and ir.p == (-1) ** ir.l:
+            if ir not in columns:
+                columns[ir] = []
+                order.append(ir)
+            columns[ir].extend(range(offset, offset + width))
+        offset += width
+    selected = o3.Irreps([(len(columns[ir]) // ir.dim, ir) for ir in order])
+    index = [column for ir in order for column in columns[ir]]
+    return selected, index
+
+
+def _as_multipole(charges, dipoles):
+    """Charge plus dipole in the node-feature frame (q, y, z, x)."""
+    if dipoles.ndim != 2 or dipoles.shape[-1] != 3:
+        raise ValueError("atomic dipoles must have shape [n_atoms, 3]")
+    charges = charges.reshape(dipoles.shape[0], 1)
+    return torch.cat((charges, dipoles[:, [1, 2, 0]]), dim=-1)
 
 
 class MLDFTB(_LocalSourceModelBase):
@@ -65,8 +99,14 @@ class MLDFTB(_LocalSourceModelBase):
         pbc_handling="auto",
         kspace_cutoff_factor=1.5,
         hamiltonian_cutoff=None,
+        fragment_diagonalize=False,
+        fragment_radius=6.0,
+        batched_diagonalize=False,
+        use_nonlocal_energy=False,
     ):
         super().__init__()
+        if fragment_diagonalize and batched_diagonalize:
+            raise ValueError("Choose at most one of fragment_diagonalize and batched_diagonalize")
         if energy_kind not in {"internal", "free"}:
             raise ValueError("energy_kind must be internal or free")
         if num_interactions < 1:
@@ -115,6 +155,10 @@ class MLDFTB(_LocalSourceModelBase):
             onsite_mode,
         )
         self.electronic_state = ElectronicState(n_s + 3 * n_p, elec_temp_units)
+        if fragment_diagonalize:
+            self.use_fragment_diagonalization(fragment_radius)
+        if batched_diagonalize:
+            self.use_batched_diagonalization()
         self.density_electrostatics = DensityElectrostatics(
             n_s,
             n_p,
@@ -131,6 +175,105 @@ class MLDFTB(_LocalSourceModelBase):
             kspace_cutoff_factor,
         )
         self.energy_kind = energy_kind
+        self.use_nonlocal_energy = bool(use_nonlocal_energy)
+        self.nonlocal_irreps, feature_index = _polar_feature_index(self.hidden_irreps)
+        if self.nonlocal_irreps.dim == 0:
+            raise ValueError("nonlocal energy needs l=0 or l=1 node features")
+        self.register_buffer(
+            "nonlocal_feature_index",
+            torch.tensor(feature_index, dtype=torch.long),
+            persistent=False,
+        )
+        multipole_irreps = o3.Irreps("1x0e + 1x1o")
+        self.spin_up_multipole_embedding = o3.Linear(
+            multipole_irreps, self.nonlocal_irreps
+        )
+        self.spin_down_multipole_embedding = o3.Linear(
+            multipole_irreps, self.nonlocal_irreps
+        )
+        n_invariants = 2 * sum(mul * mul for mul, _ir in self.nonlocal_irreps)
+        self.nonlocal_mlp = torch.nn.Sequential(
+            torch.nn.Linear(n_invariants, 64),
+            torch.nn.SiLU(),
+            torch.nn.Linear(64, 64),
+            torch.nn.SiLU(),
+            torch.nn.Linear(64, 1),
+        )
+
+    def use_fragment_diagonalization(self, radius=6.0):
+        """Divide-and-conquer diagonalisation with fragment radius in Å; None restores full."""
+        state = self.electronic_state
+        block, units = state.block_size, state.occupations.elec_temp_units
+        tolerance = state.occupations.degeneracy_tolerance
+        self.electronic_state = (
+            ElectronicState(block, units, tolerance)
+            if radius is None
+            else FragmentElectronicState(block, radius, units, tolerance)
+        )
+        return self
+
+    def use_batched_diagonalization(self, batched=True):
+        """Full diagonalisation in one batched eigh per batch; False restores the per-graph loop."""
+        state = self.electronic_state
+        block, units = state.block_size, state.occupations.elec_temp_units
+        tolerance = state.occupations.degeneracy_tolerance
+        self.electronic_state = (BatchedElectronicState if batched else ElectronicState)(
+            block, units, tolerance
+        )
+        return self
+    
+    def _multipole_invariants(self, node_features, embedding):
+        """d_kk'l = sum_m h_klm p_k'lm for each polar irrep. Returns [n_atoms, sum_l K_l^2]."""
+        parts = []
+        offset = 0
+        for mul, ir in self.nonlocal_irreps:
+            dim = ir.dim
+            width = mul * dim
+            h = node_features[:, offset : offset + width].reshape(-1, mul, dim)
+            p = embedding[:, offset : offset + width].reshape(-1, mul, dim)
+            parts.append(
+                torch.einsum("nkm,nqm->nkq", h, p).reshape(h.shape[0], mul * mul)
+            )
+            offset += width
+        return torch.cat(parts, dim=-1)
+
+    def nonlocal_energy(
+        self,
+        node_features,
+        spin_up_atomic_charges,
+        spin_down_atomic_charges,
+        spin_up_atomic_dipoles,
+        spin_down_atomic_dipoles,
+        batch,
+    ):
+        """Per-graph nonlocal energy, [n_graphs].
+
+        node_features: [n_atoms, n_features]
+        spin charges: [n_atoms]
+        spin dipoles: [n_atoms, 3] in Cartesian (x, y, z)
+        batch: [n_atoms] graph index
+        """
+        if node_features.shape[-1] != self.hidden_irreps.dim:
+            raise ValueError("node_features do not match hidden_irreps")
+        if batch.shape != node_features.shape[:1]:
+            raise ValueError("batch must contain one graph index per atom")
+        node_features = node_features.index_select(-1, self.nonlocal_feature_index)
+        embedded_up = self.spin_up_multipole_embedding(
+            _as_multipole(spin_up_atomic_charges, spin_up_atomic_dipoles)
+        )
+        embedded_down = self.spin_down_multipole_embedding(
+            _as_multipole(spin_down_atomic_charges, spin_down_atomic_dipoles)
+        )
+        invariants = torch.cat(
+            (
+                self._multipole_invariants(node_features, embedded_up),
+                self._multipole_invariants(node_features, embedded_down),
+            ),
+            dim=-1,
+        )
+        atomic_energy = self.nonlocal_mlp(invariants).squeeze(-1)
+        n_graphs = int(batch.max()) + 1
+        return atomic_energy.new_zeros(n_graphs).index_add(0, batch, atomic_energy)
 
     @torch.enable_grad()
     def forward(
@@ -230,7 +373,10 @@ class MLDFTB(_LocalSourceModelBase):
             ).squeeze(-1)
         local = x.new_zeros(ng).index_add(0, batch, node_energy)
         H = self.hamiltonian(features, x, edges, shifts, ptr)
-        state = self.electronic_state(H, alpha, beta, temperature)
+        if isinstance(self.electronic_state, FragmentElectronicState):
+            state = self.electronic_state(H, alpha, beta, temperature, geometry)
+        else:
+            state = self.electronic_state(H, alpha, beta, temperature)
         result = self.density_electrostatics(
             state["gamma"],
             geometry,
@@ -257,6 +403,21 @@ class MLDFTB(_LocalSourceModelBase):
         if self.energy_kind == "free":
             energy = energy + state["entropy_energy"]
         energy = energy + x.sum() * 0
+        nonlocal_energy = None
+        if self.use_nonlocal_energy:
+            q_up = self.density_electrostatics.density_map(
+                0.5 * (state["gamma"] + state["gamma_spin"])
+            )
+            q_down = self.density_electrostatics.density_map(
+                0.5 * (state["gamma"] - state["gamma_spin"])
+            )
+            n_up, d_up = self.density_electrostatics.basis.moments(q_up)
+            n_down, d_down = self.density_electrostatics.basis.moments(q_down)
+            nonlocal_energy = self.nonlocal_energy(
+                features, -n_up, -n_down, -d_up, -d_down, batch
+            )
+            energy = energy + nonlocal_energy
+
         result.update(
             energy=energy,
             local_energy=local,
@@ -268,6 +429,8 @@ class MLDFTB(_LocalSourceModelBase):
             virials=None,
             stress=None,
         )
+        if nonlocal_energy is not None:
+            result["nonlocal_energy"] = nonlocal_energy
         targets = ([positions] if compute_force else []) + (
             [displacement] if compute_virials or compute_stress else []
         )

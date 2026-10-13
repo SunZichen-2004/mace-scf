@@ -45,6 +45,18 @@ def _rescale_fixedpoint_charge_heads(
 
 
 
+def _embedding_specs(args):
+    specs = getattr(args, "embedding_specs", None)
+    if specs is None:
+        return None
+    if isinstance(specs, str):
+        specs = ast.literal_eval(specs)
+    if not isinstance(specs, dict) or not specs:
+        raise ValueError("embedding_specs must be a non-empty dict")
+    logging.info("Using graph/node embedding_specs: %s", specs)
+    return specs
+
+
 def build_model(
     args,
     z_table,
@@ -94,6 +106,7 @@ def build_model(
             interaction_cls_first=mace.modules.interaction_classes[
                 args.interaction_first
             ],
+            embedding_specs=_embedding_specs(args),
         )
     elif args.model == "ScaleShiftMACE":
         mean, std = mace.modules.scaling_classes[args.scaling](
@@ -106,6 +119,7 @@ def build_model(
             ],
             atomic_inter_scale=std,
             atomic_inter_shift=mean,
+            embedding_specs=_embedding_specs(args),
         )
     elif args.model == "FixedChargeBaselinedMACE":
         formal_charges = ast.literal_eval(args.atomic_formal_charges)
@@ -211,7 +225,9 @@ def build_model(
         allowed = {"hamiltonian_cutoff", "n_s", "n_p", "edge_mode", "onsite_mode", "matrix_feature_multiplicity",
                    "matrix_radial_hidden", "elec_temp_units", "energy_kind", "sigma",
                    "pp_scalar", "keep_quadrupoles", "coupling_mode", "C", "nuclear_profile",
-                   "nuclear_charge_mode", "self_policy", "pbc_handling", "kspace_cutoff_factor"}
+                   "nuclear_charge_mode", "self_policy", "pbc_handling", "kspace_cutoff_factor",
+                   "fragment_diagonalize", "fragment_radius", "batched_diagonalize",
+                   "use_nonlocal_energy"}
         unknown = set(options) - allowed
         if unknown:
             raise ValueError(f"Unknown mldftb_config options: {sorted(unknown)}; use shared CLI options for MACE features")
@@ -224,6 +240,10 @@ def build_model(
             **config, effective_nuclear_charges=[charges[z] for z in z_table.zs],
             heads=list(args.heads),
             interaction_cls_first=mace.modules.interaction_classes[args.interaction_first],
+        )
+        logging.info(
+            "MLDFTB electronic state: %s",
+            type(model.electronic_state).__name__,
         )
     elif args.model == "MACEQEq":
         with disable_e3nn_codegen():

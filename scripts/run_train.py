@@ -20,6 +20,7 @@ from mace.tools import torch_geometric, init_wandb
 from mace import tools
 import mace.modules
 from mace.tools.scripts_utils import LRScheduler
+from mace_scf.utils.lr_scheduler import CosineAnnealingScheduler
 
 # mace_scf replaces data, and some utils
 import mace_scf.data
@@ -77,12 +78,34 @@ class NoOpLRScheduler:
         return None
 
 
-def build_lr_scheduler(optimizer, args):
+def cosine_t_max(train_stage) -> int:
+    return int(train_stage["end"]) - int(train_stage["start"]) + 1
+
+
+def cosine_eta_min(args, train_stage) -> float:
+    if "lr_scheduler_eta_min" in train_stage:
+        return float(train_stage["lr_scheduler_eta_min"])
+    return float(args.lr_scheduler_eta_min)
+
+
+def build_cosine_scheduler(optimizer, args, train_stage):
+    return CosineAnnealingScheduler(
+        optimizer,
+        t_max=cosine_t_max(train_stage),
+        eta_min=cosine_eta_min(args, train_stage),
+    )
+
+
+def build_lr_scheduler(optimizer, args, train_stage=None):
     if args.optimizer == "schedulefree":
         logging.info(
             "ScheduleFree optimizer selected; LR scheduler options are ignored."
         )
         return NoOpLRScheduler()
+    if args.scheduler == "CosineAnnealingLR":
+        if train_stage is None:
+            train_stage = args.train_schedule[0]
+        return build_cosine_scheduler(optimizer, args, train_stage)
     return LRScheduler(optimizer, args)
 
 
@@ -380,6 +403,9 @@ def main() -> None:
                 new_lr = train_stage[param_group["name"]+"_lr"]
                 logging.info(f"Setting learning rate to {new_lr} for {param_group['name']}")
                 param_group["lr"] = new_lr
+        if args.scheduler == "CosineAnnealingLR" and args.optimizer != "schedulefree":
+            # Rebuild after the stage lr is applied so the cosine starts there.
+            lr_scheduler = build_cosine_scheduler(optimizer, args, train_stage)
         logging.debug(f"Optimizer: {optimizer}")
 
         checkpoint_handler_stage = tools.CheckpointHandler(

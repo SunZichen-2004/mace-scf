@@ -34,6 +34,19 @@ def preprocess_extended_arg_parser() -> argparse.ArgumentParser:
 
 def extended_arg_parser() -> argparse.ArgumentParser:
     parser = build_default_arg_parser()
+    for action in parser._actions:
+        if "--scheduler" in action.option_strings:
+            action.help = (
+                "Type of scheduler: ReduceLROnPlateau, ExponentialLR, "
+                "or CosineAnnealingLR"
+            )
+            break
+    parser.add_argument(
+        "--lr_scheduler_eta_min",
+        help="Minimum learning rate for CosineAnnealingLR",
+        type=float,
+        default=1e-6,
+    )
 
     # new arguments
     parser.add_argument(

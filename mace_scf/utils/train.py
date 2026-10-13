@@ -750,9 +750,13 @@ def valid_err_log(
     elif log_errors == "EnergyDipoleRMSE":
         error_e = eval_metrics["rmse_e_per_atom"] * 1e3
         error_f = eval_metrics["rmse_f"] * 1e3
-        error_mu = eval_metrics["rmse_mu_per_atom"] * 1e3
+        if "rmse_mu" in eval_metrics:
+            error_mu = eval_metrics["rmse_mu"] * 1e3
+            mu_txt = f"{error_mu:.1f} meA"
+        else:
+            mu_txt = "not found"
         logging.info(
-            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_Mu_per_atom={error_mu:.2f} mDebye"
+            f"Epoch {epoch}: loss={valid_loss:.4f}, RMSE_E_per_atom={error_e:.1f} meV, RMSE_F={error_f:.1f} meV / A, RMSE_dipole={mu_txt}"
         )
     elif log_errors == "DensityCoefficientsRMSE":
         error_dma = eval_metrics.get("rmse_dma", float("nan")) * 1e3

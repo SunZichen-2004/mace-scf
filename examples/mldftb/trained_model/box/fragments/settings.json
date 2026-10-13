@@ -1,0 +1,19 @@
+{
+  "input": "examples/mldftb/trained_model/box/locality",
+  "radii": [
+    3,
+    4,
+    5,
+    6,
+    6.8,
+    8,
+    10,
+    11.515506432759569
+  ],
+  "counts": [
+    128.0,
+    128.0
+  ],
+  "threads": 1,
+  "model": "examples/mldftb/trained_model/positive/mldftb_rewrite_initial.model"
+}

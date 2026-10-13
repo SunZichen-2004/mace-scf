@@ -1,0 +1,86 @@
+{
+  "model": "/home/wjb48/rds/hpc-work/MLDFTB/energy_force_only/mldftb_rewrite_initial.model",
+  "xyz": "/home/wjb48/rds/hpc-work/MLDFTB/md/water.xyz",
+  "frames": ":",
+  "output": "profiles/water64",
+  "device": "cuda",
+  "dtype": "float64",
+  "head": null,
+  "repeat": [
+    [
+      1,
+      1,
+      1
+    ],
+    [
+      2,
+      1,
+      1
+    ],
+    [
+      2,
+      2,
+      1
+    ],
+    [
+      2,
+      2,
+      2
+    ]
+  ],
+  "methods": [
+    "dense",
+    "davidson",
+    "lobpcg"
+  ],
+  "backends": [
+    "csr"
+  ],
+  "starts": [
+    "cold",
+    "warm"
+  ],
+  "empty_states": 16,
+  "tail_tolerance": 1e-06,
+  "auto_expand": true,
+  "tolerance": 1e-07,
+  "maxiter": 100,
+  "subspace_factor": 3,
+  "preconditioner": "jacobi",
+  "edge_chunk": 1024,
+  "repeats": 3,
+  "warmup": 1,
+  "dense_max_dim": 8192,
+  "threads": 1,
+  "seed": 123,
+  "no_plot": false,
+  "torch_version": "2.3.0",
+  "cuda_version": "12.1",
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "hamiltonian_cutoff": 5.0,
+  "mace_cutoff": 5.0,
+  "block_size": 5,
+  "selected_frames": 1,
+  "actual_repetitions": [
+    [
+      1,
+      1,
+      1
+    ],
+    [
+      2,
+      1,
+      1
+    ],
+    [
+      2,
+      2,
+      1
+    ],
+    [
+      2,
+      2,
+      2
+    ]
+  ]
+}

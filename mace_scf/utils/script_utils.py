@@ -35,7 +35,8 @@ NEW_TABLE_TYPES = [
     "DipoleRMSE",
     "DensityDipoleRMSE",
     "EnergyDensityDipoleRMSE",
-    "EnergyDipolePotentialsRMSE"
+    "EnergyDipolePotentialsRMSE",
+    "EnergyDipoleRMSE",
 ]
 
 
@@ -77,6 +78,14 @@ def create_error_table(
             "RMSE E / meV / atom",
             "RMSE F / meV / A",
             "relative F RMSE %",
+        ]
+    elif table_type == "EnergyDipoleRMSE":
+        table.field_names = [
+            "config_type",
+            "RMSE E / meV / atom",
+            "RMSE F / meV / A",
+            "relative F RMSE %",
+            "RMSE dipole / meA",
         ]
     elif table_type == "DipoleRMSE":
         table.field_names = [
@@ -153,6 +162,7 @@ def create_error_table(
             "rel_rmse_dma",
             "rmse_charges",
             "rmse_local_dipoles",
+            "rmse_mu",
             "rmse_mu_per_atom",
             "rel_rmse_mu",
             "rmse_esp",
@@ -227,6 +237,16 @@ def create_error_table(
                     metrics['rmse_mu_per_atom'],
                     metrics['rel_rmse_mu'],
                     metrics['rmse_polarizability_per_atom'],
+                ]
+            )
+        elif table_type == "EnergyDipoleRMSE":
+            table.add_row(
+                [
+                    name,
+                    metrics["rmse_e_per_atom"],
+                    metrics["rmse_f"],
+                    metrics["rel_rmse_f"],
+                    metrics["rmse_mu"],
                 ]
             )
         elif table_type == "EnergyDipolePotentialsRMSE":

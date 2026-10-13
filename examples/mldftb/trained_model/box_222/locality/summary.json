@@ -1,0 +1,50 @@
+{
+  "model": "examples/mldftb/trained_model/positive/mldftb_rewrite_initial.model",
+  "xyz": "examples/mldftb/trained_model/box_222/configuration.xyz",
+  "atoms": 1536,
+  "block_size": 5,
+  "hamiltonian_cutoff": 5.0,
+  "cell": [
+    [
+      27.46794796147718,
+      0.0,
+      0.0
+    ],
+    [
+      -1.1088268712791652e-06,
+      27.46794796147718,
+      0.0
+    ],
+    [
+      -1.1088268712791652e-06,
+      -1.1088268712791652e-06,
+      27.46794796147718
+    ]
+  ],
+  "results": [
+    {
+      "width_eV": 0.025,
+      "chemical_potentials": [
+        -0.11682021339342127,
+        -0.11682021339342127
+      ],
+      "electron_count": 2047.9999999999995,
+      "density_frobenius": 62.971320706188294,
+      "offsite_frobenius": 45.60731282347534,
+      "gap_eV": 0.12457006272536214,
+      "electrons_above_nominal_occupied": 33.664771489370175
+    },
+    {
+      "width_eV": 0.0001,
+      "chemical_potentials": [
+        -0.1121638222980407,
+        -0.1121638222980407
+      ],
+      "electron_count": 2048.0,
+      "density_frobenius": 64.0,
+      "offsite_frobenius": 46.69362982729421,
+      "gap_eV": 0.12457006272536214,
+      "electrons_above_nominal_occupied": 3.195949797461604e-270
+    }
+  ]
+}

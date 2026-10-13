@@ -1,0 +1,72 @@
+# Edit the species/charges and property mappings for your dataset.
+name: mldftb
+model: MLDFTB
+E0s: average
+hidden_irreps: "16x0e + 16x1o"
+num_interactions: 2
+r_max: 5.0
+batch_size: 2
+valid_batch_size: 2
+valid_fraction: 0.1
+eval_interval: 1
+optimizer: adam
+amsgrad: true
+ema: true
+ema_decay: 0.99
+default_dtype: float64
+device: cpu
+error_table: PerAtomRMSE
+compute_polarizability: false
+compute_stress: false
+atomic_multipoles_max_l: 1
+electrostatic_pbc_method: auto
+save_cpu: true
+restart_latest: false
+
+mldftb_config:
+  effective_nuclear_charges: {1: 1.0, 8: 6.0}
+  n_s: 1
+  n_p: 1
+  edge_mode: linear_endpoints
+  onsite_mode: quadratic
+  matrix_feature_multiplicity: 4
+  matrix_radial_hidden: 32
+  elec_temp_units: eV
+  energy_kind: internal
+  sigma: 1.0
+  pp_scalar: g
+  keep_quadrupoles: false
+  coupling_mode: paired
+  nuclear_profile: shared_g
+  nuclear_charge_mode: per_species
+  self_policy: full
+  kspace_cutoff_factor: 1.5
+
+heads:
+  Default:
+    info_keys:
+      energy: REF_energy
+      N_alpha: N_alpha
+      N_beta: N_beta
+      elec_temp: elec_temp
+      total_charge: total_charge
+      external_field: external_field
+      # dipole: REF_dipole
+      # stress: REF_stress
+    arrays_keys:
+      forces: REF_forces
+      # atomic_multipoles: REF_atomic_multipoles
+      # effective_nuclear_charges: effective_nuclear_charges
+
+train_schedule:
+  0:
+    start: 0
+    end: 49
+    name: initial
+    lr: 0.001
+    loss:
+      energy_per_atom: 10.0
+      forces: 100.0
+      # atomic_multipoles: 10.0
+      # dipole: 1.0
+      # stress: 1.0

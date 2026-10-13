@@ -1,0 +1,26 @@
+{
+  "sizes": [
+    500,
+    1000,
+    2000
+  ],
+  "fractions": [
+    0.15,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "threads": 1,
+  "repeats": 3,
+  "warmup": 1,
+  "seed": 123,
+  "matrix": "banded",
+  "bandwidth": 100,
+  "torch": "2.0.0",
+  "output": "examples/mldftb/dense_subset_cpu",
+  "platform": "macOS-14.8.3-arm64-arm-64bit",
+  "numpy": "1.26.4",
+  "scipy": "1.12.0",
+  "dtype": "float64",
+  "threadpools": "threadpoolctl unavailable; thread limits requested via environment"
+}

@@ -318,6 +318,7 @@ class ExtAtomicData(AtomicData):
             charges=atomic_data.charges,
             polarizability=atomic_data.polarizability,
             polarizability_weight=polarizability_weight,
+            total_spin=atomic_data.total_spin,
             elec_temp=atomic_data.elec_temp,  # new things below
             **{
                 key: torch.as_tensor(config.properties[key], dtype=torch.get_default_dtype())

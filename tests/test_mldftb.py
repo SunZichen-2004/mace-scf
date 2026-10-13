@@ -5,6 +5,7 @@ import torch
 from e3nn import o3
 from mace_scf.electrostatics.mldftb import MLDFTB
 from mace_scf.electrostatics.matrix_ops import ElectronicState, HamiltonianBuilder
+from mace_scf.electrostatics.batched_state import BatchedElectronicState
 from mace_scf.electrostatics.density_electrostatics import DensityElectrostatics
 
 
@@ -423,3 +424,53 @@ def test_short_hamiltonian_cutoff_model_force_training():
     assert all(
         torch.isfinite(p.grad).all() for p in m.parameters() if p.grad is not None
     )
+
+
+def test_batched_state_matches_per_graph_loop():
+    sizes, keys = [2, 3, 1], ["gamma", "gamma_spin", "band_energy", "entropy_energy"]
+    raw = [torch.randn(4 * n, 4 * n) for n in sizes]
+    args = (torch.tensor([3.1, 5.0, 2.0]), torch.tensor([2.4, 4.0, 1.5]), torch.tensor([0.2, 0.05, 0.3]))
+
+    def run(state):
+        hs = [((h + h.T) / 2).requires_grad_(True) for h in raw]
+        out = state(hs, *args)
+        energy = out["band_energy"].sum() + out["entropy_energy"].sum() + out["gamma_spin"].square().sum()
+        grads = torch.autograd.grad(energy, hs, create_graph=True)
+        loss = sum(g.square().sum() for g in grads) + out["gamma"].square().sum()
+        second = torch.autograd.grad(loss, hs)
+        return [out[k].detach() for k in keys] + [g.detach() for g in grads + second]
+
+    for a, b in zip(run(ElectronicState(4, "eV")), run(BatchedElectronicState(4, "eV"))):
+        torch.testing.assert_close(a, b, atol=1e-10, rtol=1e-8)
+
+    state = BatchedElectronicState(4, "eV")
+    other = (raw[0] + raw[0].T) / 2
+
+    def fn(h):
+        return state([other, (h + h.T) / 2], *(t[:2] for t in args))["gamma"]
+
+    h = torch.randn(12, 12, requires_grad=True)
+    assert torch.autograd.gradcheck(fn, (h,))
+    assert torch.autograd.gradgradcheck(fn, (h,))
+
+
+def test_model_batched_diagonalization_matches_full():
+    d = graph()
+    two = dict(
+        positions=torch.cat((d["positions"], d["positions"][:2] + 5.0)),
+        node_attrs=torch.ones(5, 1),
+        edge_index=torch.tensor([[0, 1, 0, 2, 1, 2, 3, 4], [1, 0, 2, 0, 2, 1, 4, 3]]),
+        N_alpha=torch.tensor([1.7, 1.1]),
+        N_beta=torch.tensor([1.3, 0.9]),
+        elec_temp=torch.tensor([0.2, 0.1]),
+        batch=torch.tensor([0, 0, 0, 1, 1]),
+        ptr=torch.tensor([0, 3, 5]),
+    )
+    m = model("linear_endpoints")
+    full = m(two, training=True)
+    batched = m.use_batched_diagonalization()(two, training=True)
+    for key in ["energy", "forces", "band_energy", "entropy_energy"]:
+        torch.testing.assert_close(full[key], batched[key], atol=1e-10, rtol=1e-8)
+    assert isinstance(m.use_batched_diagonalization(False).electronic_state, ElectronicState)
+    with pytest.raises(ValueError, match="at most one"):
+        MLDFTB([1], [1.0], fragment_diagonalize=True, batched_diagonalize=True)

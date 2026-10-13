@@ -146,6 +146,13 @@ or metrics.
 - `lr`
 - more detailed options for SCF models (e.g. `fixed_point_training_options`) when relevant
 
+The learning-rate scheduler is a top-level option. `ReduceLROnPlateau` is the default. `CosineAnnealingLR` anneals each stage from that stage's `lr` down to `lr_scheduler_eta_min` (default `1e-6`) over `end - start + 1` epochs. A stage can override the floor with its own `lr_scheduler_eta_min`.
+
+```yaml
+scheduler: CosineAnnealingLR
+lr_scheduler_eta_min: 1.0e-6
+```
+
 For example:
 
 ```yaml

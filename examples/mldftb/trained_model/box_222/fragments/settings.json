@@ -1,0 +1,20 @@
+{
+  "input": "examples/mldftb/trained_model/box_222/locality",
+  "radii": [
+    3,
+    4,
+    5,
+    6,
+    6.8,
+    8,
+    10
+  ],
+  "counts": [
+    1024.0,
+    1024.0
+  ],
+  "representative_cores": 192,
+  "hamiltonian_translation_error_eV": 1.3484462990653867e-09,
+  "threads": 1,
+  "model": "examples/mldftb/trained_model/positive/mldftb_rewrite_initial.model"
+}
